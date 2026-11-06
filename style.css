@@ -105,3 +105,54 @@ button:disabled { opacity: 0.4; cursor: default; }
 .prog .t { background: #c7d2fe; }
 .prog .m { background: #4f46e5; }
 .cr-sub { font-size: 11px; color: #64748b; }
+
+/* ---- 地図・雨温図・年表 ---- */
+.quick .mapch { background: #10b981; }
+.quick .tlch { background: #8b5cf6; }
+.visual { margin-top: 10px; }
+.map { display: block; width: 100%; height: auto; border-radius: 12px; touch-action: manipulation; }
+.map .sea { fill: #dbeafe; }
+.map .inset { fill: none; stroke: #94a3b8; stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.map path { stroke: #64748b; stroke-width: 0.8; vector-effect: non-scaling-stroke; stroke-linejoin: round; }
+.map .land { fill: #f5f1e3; }
+.map.tap .land { cursor: pointer; }
+.map .hl { fill: #f97316; }
+.map .okfill { fill: #22c55e; }
+.map .ngfill { fill: #ef4444; }
+.map .lake { fill: #bfdbfe; stroke: #60a5fa; }
+.map .ring { fill: none; stroke: #dc2626; stroke-dasharray: 6 4; vector-effect: none; }
+.map .river { fill: none; stroke: #1d4ed8; stroke-linecap: round; stroke-linejoin: round; }
+.map .range { fill: none; stroke: #92400e; stroke-linecap: round; stroke-linejoin: round; opacity: .75; }
+.map .mark { fill: rgba(220, 38, 38, .25); stroke: #dc2626; stroke-width: 2.5; vector-effect: non-scaling-stroke; }
+.map .markdot { fill: #dc2626; }
+.maphint { font-size: 14px; color: #475569; margin: 0 0 6px; text-align: center; }
+.mapback { width: 100%; margin-top: 8px; }
+.chart { display: block; width: 100%; height: auto; }
+.chart .grid { stroke: #e2e8f0; }
+.chart .axis { stroke: #64748b; }
+.chart .ax { font-size: 11px; fill: #475569; }
+.chart .tl { text-anchor: end; fill: #dc2626; }
+.chart .pr { text-anchor: start; fill: #2563eb; }
+.chart .mid { text-anchor: middle; }
+.chart .unit { font-weight: 700; }
+.chart .pbar { fill: #93c5fd; }
+.chart .tline { fill: none; stroke: #dc2626; stroke-width: 2.5; }
+.chart .tdot { fill: #dc2626; }
+.chart-note { text-align: center; font-size: 14px; margin: 4px 0 6px; }
+.legend .tl { background: #dc2626; }
+.legend .pr { background: #93c5fd; }
+.ev { text-align: left; display: flex; align-items: center; gap: 10px; font-size: 16px; }
+.ev .num { flex: 0 0 30px; height: 30px; border-radius: 99px; border: 2px solid #cbd5e1; display: inline-flex; align-items: center; justify-content: center; font-weight: 800; }
+.ev.picked { background: #eef2ff; border-color: #6366f1; }
+.ev.picked .num { background: #4f46e5; border-color: #4f46e5; color: #fff; }
+.ev .yr { margin-left: auto; color: #475569; font-weight: 700; }
+.ev.right .num { background: #16a34a; border-color: #16a34a; }
+.ev.wrong .num { background: #dc2626; border-color: #dc2626; }
+.timeline { background: #fff; border-radius: 16px; padding: 10px 14px; box-shadow: 0 1px 3px rgba(0,0,0,.06); border-left: 4px solid #8b5cf6; }
+.tl-ev { padding: 8px 4px; font-size: 15px; display: flex; gap: 10px; }
+.tl-ev b { color: #6d28d9; min-width: 62px; }
+.slot { display: block; width: 100%; min-height: 44px; border: 2px dashed #c4b5fd; background: #faf5ff; border-radius: 10px; font-size: 17px; font-weight: 800; color: #6d28d9; text-align: left; padding: 6px 12px; }
+.slot:disabled { opacity: 1; }
+.slot.right { background: #dcfce7; border: 2px solid #16a34a; color: #166534; }
+.slot.wrong { background: #fee2e2; border: 2px solid #dc2626; color: #991b1b; }
+.ex { white-space: pre-line; }

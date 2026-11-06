@@ -1,5 +1,5 @@
 // オンライン時は最新版を取得し、オフライン時は保存しておいた版で動く
-var CACHE = "jq-cache-v1";
+var CACHE = "jq-cache-v2";
 var FILES = [
   "./",
   "index.html",
@@ -9,6 +9,9 @@ var FILES = [
   "questions/core.js",
   "questions/history.js",
   "questions/geography.js",
+  "questions/mapdata.js",
+  "questions/maps.js",
+  "questions/timeline.js",
   "icon-180.png",
   "icon-192.png",
   "icon-512.png"

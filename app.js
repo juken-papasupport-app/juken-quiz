@@ -9,6 +9,9 @@
   var PRAISE = ["すごい！", "その調子！", "よくできました！", "正解！", "ナイス！", "完ぺき！"];
 
   // ---------- 保存データ ----------
+  function allCatIds() {
+    return QB.categories.history.concat(QB.categories.geography).map(function (c) { return c.id; });
+  }
   function defaultState() {
     return {
       settings: {
@@ -20,7 +23,8 @@
           geography: QB.categories.geography.map(function (c) { return c.id; })
         },
         format: "choice",
-        count: 10
+        count: 10,
+        seenCats: allCatIds()
       },
       progress: {},
       days: {},
@@ -34,10 +38,25 @@
       if (!raw) return defaultState();
       var s = JSON.parse(raw);
       var d = defaultState();
+      var hadSeen = !!(s.settings && s.settings.seenCats);
       s.settings = Object.assign(d.settings, s.settings || {});
+      if (!hadSeen) delete s.settings.seenCats;
       s.progress = s.progress || {};
       s.days = s.days || {};
       s.sessions = s.sessions || [];
+      // あとから追加された分類は、最初は「選択済み」にする
+      var NEW_V2 = ["timeline", "mappref", "mapprod", "mapfeat", "climate"];
+      if (!s.settings.seenCats) {
+        s.settings.seenCats = allCatIds().filter(function (id) { return NEW_V2.indexOf(id) < 0; });
+      }
+      ["history", "geography"].forEach(function (subj) {
+        QB.categories[subj].forEach(function (c) {
+          if (s.settings.seenCats.indexOf(c.id) < 0) {
+            s.settings.seenCats.push(c.id);
+            if (s.settings.cats[subj].indexOf(c.id) < 0) s.settings.cats[subj].push(c.id);
+          }
+        });
+      });
       return s;
     } catch (e) {
       return defaultState();
@@ -212,6 +231,8 @@
       '<section class="quick">' +
         '<button class="big review" data-start="review" ' + (due ? "" : "disabled") + '>🔁 今日の復習<small>' + due + "問</small></button>" +
         '<button class="big weak" data-start="weak" ' + (weak ? "" : "disabled") + '>💪 苦手克服<small>' + weak + "問</small></button>" +
+        '<button class="big mapch" data-start="mapch">🗾 地図チャレンジ<small>地図・雨温図</small></button>' +
+        '<button class="big tlch" data-start="tlch">📜 年表チャレンジ<small>並べかえ・年表</small></button>' +
       "</section>" +
       '<section class="card">' +
         '<h2>出題設定</h2>' +
@@ -236,10 +257,111 @@
     if (mode === "review") qs = shuffle(dueList()).slice(0, Math.max(n, 20));
     else if (mode === "weak") qs = weakList().slice(0, n);
     else if (mode === "cat") qs = pickNormal(filtered(opts), n);
+    else if (mode === "mapch" || mode === "tlch") {
+      var cats = QB.challenge[mode === "mapch" ? "map" : "timeline"];
+      qs = pickNormal(QB.list.filter(function (q) {
+        return cats.indexOf(q.cat) >= 0 && q.grade <= Math.max(state.settings.maxGrade, 5);
+      }), n);
+    }
     else qs = pickNormal(filtered(), n);
     if (!qs.length) return home();
     quiz = { mode: mode, qs: qs, i: 0, results: [], answered: false, revealed: false, choices: null };
     question();
+  }
+
+  // ---------- 地図 ----------
+  var M = window.MAPDATA;
+  function proj(lon, lat) {
+    var P = M.P;
+    if (lon < 128.6 && lat < 27.3) {
+      var I = P.inset;
+      return [I.x + (lon - I.lon0) * P.kx * I.s, I.y + (I.latTop - lat) * P.ky * I.s];
+    }
+    return [(lon - P.lon0) * P.kx, (P.latTop - lat) * P.ky];
+  }
+  function regionOf(code) {
+    for (var k in M.regions) if (M.regions[k].c.indexOf(code) >= 0) return k;
+    return null;
+  }
+  function regionView(key) {
+    var b = M.regions[key].b;
+    var w = b[2] - b[0], h = b[3] - b[1];
+    var pad = Math.max(w, h) * 0.12 + 10;
+    var x = b[0] - pad, y = b[1] - pad;
+    w += pad * 2; h += pad * 2;
+    // 縦横比を 1:0.85 くらいに整える
+    var ratio = 0.85;
+    if (h / w < ratio) { var nh = w * ratio; y -= (nh - h) / 2; h = nh; }
+    else { var nw = h / ratio; x -= (nw - w) / 2; w = nw; }
+    return [x, y, w, h];
+  }
+  // opts: view, fill{code:class}, ring(code), feat, tap
+  function mapSvg(opts) {
+    var P = M.P;
+    var v = opts.view || [0, 0, P.W, P.H];
+    var zoom = P.W / v[2];
+    var s = '<svg class="map' + (opts.tap ? " tap" : "") + '" viewBox="' + v.join(" ") + '" xmlns="http://www.w3.org/2000/svg">';
+    s += '<rect x="-2000" y="-2000" width="5000" height="5000" class="sea"/>';
+    var I = P.inset;
+    s += '<rect x="' + I.x + '" y="' + I.y + '" width="' + I.w + '" height="' + I.h + '" class="inset"/>';
+    M.prefs.forEach(function (p) {
+      var cls = (opts.fill && opts.fill[p.c]) || "land";
+      s += '<path d="' + p.d + '" class="' + cls + '" data-pref="' + p.c + '"/>';
+    });
+    s += '<path d="' + M.lakes + '" class="lake"/>';
+    var sw = 1 / zoom;
+    if (opts.ring) {
+      var rp = M.prefs[opts.ring - 1];
+      s += '<circle cx="' + rp.x + '" cy="' + rp.y + '" r="' + (Math.max(26, Math.sqrt(rp.a) * 0.9) / Math.sqrt(zoom)) + '" class="ring" style="stroke-width:' + 4 * sw + '"/>';
+    }
+    if (opts.feat) s += featSvg(opts.feat, sw);
+    return s + "</svg>";
+  }
+  function featSvg(f, sw) {
+    var lines = [];
+    if (f.kind === "river" || f.kind === "range") {
+      if (f.geo.ne) lines = M.rivers[f.geo.ne];
+      else lines = [f.geo.map(function (p) { return proj(p[0], p[1]); })];
+      var cls = f.kind === "river" ? "river" : "range";
+      return lines.map(function (l) {
+        return '<polyline points="' + l.map(function (p) { return p[0].toFixed(1) + "," + p[1].toFixed(1); }).join(" ") + '" class="' + cls + '" style="stroke-width:' + (f.kind === "river" ? 5 : 9) * sw + '"/>';
+      }).join("");
+    }
+    var c = proj(f.geo[0], f.geo[1]);
+    if (f.kind === "mountain") {
+      var r = 16 * sw;
+      return '<polygon points="' + c[0] + "," + (c[1] - r) + " " + (c[0] - r) + "," + (c[1] + r * 0.8) + " " + (c[0] + r) + "," + (c[1] + r * 0.8) + '" class="mark"/>';
+    }
+    return '<circle cx="' + c[0] + '" cy="' + c[1] + '" r="' + 14 * sw + '" class="mark"/><circle cx="' + c[0] + '" cy="' + c[1] + '" r="' + 4 * sw + '" class="markdot"/>';
+  }
+
+  // ---------- 雨温図 ----------
+  function climateSvg(city) {
+    var d = QB.climate[city];
+    var W = 340, H = 250, L = 38, R = 302, T = 14, B = 214;
+    var pmax = Math.max(500, Math.ceil(Math.max.apply(null, d.p) / 100) * 100);
+    var tmin = -10, tmax = 30;
+    var bw = (R - L) / 12;
+    var yP = function (v) { return B - (v / pmax) * (B - T); };
+    var yT = function (v) { return B - ((v - tmin) / (tmax - tmin)) * (B - T); };
+    var s = '<svg class="chart" viewBox="0 0 ' + W + " " + H + '" xmlns="http://www.w3.org/2000/svg">';
+    for (var t = tmin; t <= tmax; t += 10) {
+      s += '<line x1="' + L + '" x2="' + R + '" y1="' + yT(t) + '" y2="' + yT(t) + '" class="grid"/>';
+      s += '<text x="' + (L - 4) + '" y="' + (yT(t) + 4) + '" class="ax tl">' + t + "</text>";
+    }
+    for (var p = 0; p <= pmax; p += 100) s += '<text x="' + (R + 4) + '" y="' + (yP(p) + 4) + '" class="ax pr">' + p + "</text>";
+    d.p.forEach(function (v, i) {
+      s += '<rect x="' + (L + i * bw + bw * 0.15) + '" y="' + yP(v) + '" width="' + bw * 0.7 + '" height="' + (B - yP(v)) + '" class="pbar"/>';
+      s += '<text x="' + (L + i * bw + bw / 2) + '" y="' + (B + 14) + '" class="ax mid">' + (i + 1) + "</text>";
+    });
+    s += '<polyline points="' + d.t.map(function (v, i) { return (L + i * bw + bw / 2) + "," + yT(v); }).join(" ") + '" class="tline"/>';
+    d.t.forEach(function (v, i) { s += '<circle cx="' + (L + i * bw + bw / 2) + '" cy="' + yT(v) + '" r="3" class="tdot"/>'; });
+    s += '<line x1="' + L + '" x2="' + R + '" y1="' + B + '" y2="' + B + '" class="axis"/>';
+    s += '<text x="' + (L - 4) + '" y="9" class="ax tl unit">℃</text><text x="' + (R + 4) + '" y="9" class="ax pr unit">mm</text>';
+    s += '<text x="' + (W / 2) + '" y="' + (H - 6) + '" class="ax mid">（月）</text>';
+    s += "</svg>";
+    return s + '<div class="chart-note">年平均気温 <b>' + d.yt + "℃</b>　年降水量 <b>" + d.yp + "mm</b></div>" +
+      '<div class="legend center"><span><i class="tl"></i>気温（折れ線）</span><span><i class="pr"></i>降水量（ぼう）</span></div>';
   }
 
   function question() {
@@ -251,8 +373,23 @@
     var p = state.progress[q.id];
     var tag = p ? (p.lastResult === 0 ? '<span class="tag bad">前回×</span>' : '<span class="tag">' + p.correct + "/" + p.seen + "</span>") : '<span class="tag new">NEW</span>';
 
+    var type = q.type || "text";
+    var visual = "";
+    if (type === "mapname") visual = mapSvg({ fill: fillOf(q.pref, "hl"), ring: q.pref });
+    else if (type === "mapmark") visual = mapSvg({ feat: q.feat });
+    else if (type === "climate") visual = climateSvg(q.city);
+    else if (type === "maptap") { quiz.mapView = "japan"; visual = tapMapHtml(); }
+
     var body;
-    if (state.settings.format === "choice") {
+    if (type === "maptap") {
+      body = "";
+    } else if (type === "order") {
+      quiz.evs = shuffle(q.events);
+      quiz.sel = [];
+      body = '<div id="order">' + orderHtml() + "</div>";
+    } else if (type === "timeline") {
+      body = '<div id="tl">' + timelineHtml(null) + "</div>";
+    } else if (state.settings.format === "choice") {
       body = '<div class="choices">' + quiz.choices.map(function (c, i) {
         return '<button class="choice" data-choice="' + i + '">' + esc(c) + "</button>";
       }).join("") + "</div>";
@@ -268,15 +405,115 @@
         '<div class="meta">' + QB.subjects[q.subject].label + "・" + esc(catLabel(q.subject, q.cat)) +
         '<span class="lv lv' + q.level + '">' + LEVEL_LABEL[q.level] + "</span>" + tag + "</div>" +
         '<p class="q">' + esc(q.q) + "</p>" +
+        (visual ? '<div id="visual" class="visual">' + visual + "</div>" : "") +
       "</section>" + body + '<div id="feedback"></div>'
     );
   }
 
-  function feedback(ok) {
+  function fillOf(code, cls) {
+    var f = {};
+    f[code] = cls;
+    return f;
+  }
+
+  // 地図タップ：まず全国地図で地方をタップ → 拡大した地図で都道府県をタップ
+  function tapMapHtml(fill) {
+    var view = quiz.mapView === "japan" ? null : regionView(quiz.mapView);
+    var hint = quiz.answered ? "" : quiz.mapView === "japan"
+      ? '<p class="maphint">👆 まず、答えがありそうな<b>地方</b>をタップして拡大しよう</p>'
+      : '<p class="maphint">👆 答えの都道府県をタップしよう</p>';
+    var back = quiz.mapView !== "japan" && !quiz.answered ? '<button class="seg mapback" data-mapback="1">↩ 全国地図にもどる</button>' : "";
+    return hint + mapSvg({ view: view, tap: !quiz.answered, fill: fill }) + back;
+  }
+
+  function tapPref(code) {
     var q = quiz.qs[quiz.i];
+    if (quiz.answered || q.type !== "maptap") return;
+    if (quiz.mapView === "japan") {
+      quiz.mapView = regionOf(code);
+      document.getElementById("visual").innerHTML = tapMapHtml();
+      return;
+    }
+    quiz.answered = true;
+    var ok = code === q.pref;
+    var fill = fillOf(q.pref, "okfill");
+    if (!ok) fill[code] = "ngfill";
+    quiz.mapView = regionOf(q.pref);
+    document.getElementById("visual").innerHTML = tapMapHtml(fill);
+    record(q, ok);
+    quiz.results.push({ q: q, ok: ok });
+    feedback(ok, ok ? "" : "あなたがタップしたのは「" + PREF.names[code - 1] + "」");
+  }
+
+  // 並べかえ
+  function orderHtml() {
+    var q = quiz.qs[quiz.i];
+    var html = '<div class="choices">' + quiz.evs.map(function (id, i) {
+      var n = quiz.sel.indexOf(i);
+      var cls = "choice ev" + (n >= 0 ? " picked" : "");
+      if (quiz.answered) {
+        var sorted = q.events.slice().sort(function (a, b) { return QB.events[a][0] - QB.events[b][0]; });
+        cls += sorted.indexOf(id) === n ? " right" : " wrong";
+      }
+      return '<button class="' + cls + '" data-ev="' + i + '"' + (n >= 0 || quiz.answered ? " disabled" : "") + ">" +
+        '<span class="num">' + (n >= 0 ? n + 1 : "") + "</span>" + esc(QB.events[id][1]) +
+        (quiz.answered ? '<small class="yr">' + QB.events[id][0] + "年</small>" : "") + "</button>";
+    }).join("") + "</div>";
+    if (!quiz.answered && quiz.sel.length) html += '<button class="link" data-undo="1">↩ 1つもどす</button>';
+    return html;
+  }
+  function pickEvent(i) {
+    if (quiz.answered || quiz.sel.indexOf(i) >= 0) return;
+    quiz.sel.push(i);
+    var q = quiz.qs[quiz.i];
+    if (quiz.sel.length === quiz.evs.length) {
+      quiz.answered = true;
+      var years = quiz.sel.map(function (k) { return QB.events[quiz.evs[k]][0]; });
+      var ok = years.every(function (y, k) { return k === 0 || years[k - 1] <= y; });
+      document.getElementById("order").innerHTML = orderHtml();
+      record(q, ok);
+      quiz.results.push({ q: q, ok: ok });
+      feedback(ok);
+      return;
+    }
+    document.getElementById("order").innerHTML = orderHtml();
+  }
+
+  // 年表のどこに入るか
+  function timelineHtml(picked) {
+    var q = quiz.qs[quiz.i];
+    var L = ["ア", "イ", "ウ", "エ"];
+    var slot = function (k) {
+      var cls = "slot";
+      if (quiz.answered) cls += k === q.slot ? " right" : k === picked ? " wrong" : "";
+      return '<button class="' + cls + '" data-slot="' + k + '"' + (quiz.answered ? " disabled" : "") + ">" + L[k] +
+        (quiz.answered && k === q.slot ? "　← " + esc(QB.events[q.target][1]) + "（" + QB.events[q.target][0] + "年）" : "") + "</button>";
+    };
+    var h = '<div class="timeline">' + slot(0);
+    q.anchors.forEach(function (a, k) {
+      h += '<div class="tl-ev"><b>' + QB.events[a][0] + "年</b>" + esc(QB.events[a][1]) + "</div>" + slot(k + 1);
+    });
+    return h + "</div>";
+  }
+  function pickSlot(k) {
+    if (quiz.answered) return;
+    quiz.answered = true;
+    var q = quiz.qs[quiz.i];
+    var ok = k === q.slot;
+    document.getElementById("tl").innerHTML = timelineHtml(k);
+    record(q, ok);
+    quiz.results.push({ q: q, ok: ok });
+    feedback(ok);
+  }
+
+  function feedback(ok, note) {
+    var q = quiz.qs[quiz.i];
+    var t = q.type || "text";
+    var right = t === "order" ? "正しい順番は下のとおり" : t === "timeline" ? "正解は「" + esc(q.a) + "」" : "正解は「" + esc(q.a) + "」";
     var msg = ok ? '<div class="fb ok">⭕ ' + PRAISE[Math.floor(Math.random() * PRAISE.length)] + "</div>"
-                 : '<div class="fb ng">❌ 正解は「' + esc(q.a) + "」</div>";
-    var ex = q.ex ? '<p class="ex">💡 ' + esc(q.ex) + "</p>" : "";
+                 : '<div class="fb ng">❌ ' + right + "</div>";
+    var exText = (note ? note + "\n" : "") + (q.ex || "");
+    var ex = exText ? '<p class="ex">💡 ' + esc(exText) + "</p>" : "";
     var last = quiz.i + 1 >= quiz.qs.length;
     document.getElementById("feedback").innerHTML =
       msg + ex + '<button class="big start" data-next="1">' + (last ? "結果を見る" : "次の問題 ▶") + "</button>";
@@ -448,6 +685,8 @@
 
   // ---------- 操作 ----------
   app.addEventListener("click", function (e) {
+    var pr = e.target.closest && e.target.closest("svg.tap [data-pref]");
+    if (pr) return tapPref(+pr.getAttribute("data-pref"));
     var b = e.target.closest("button");
     if (!b || b.disabled) return;
     var s = state.settings;
@@ -482,6 +721,10 @@
       return startQuiz("cat", { subject: p[0], cat: p[1] });
     }
     if (ds.choice !== undefined) return answerChoice(+ds.choice);
+    if (ds.ev !== undefined) return pickEvent(+ds.ev);
+    if (ds.undo) { quiz.sel.pop(); document.getElementById("order").innerHTML = orderHtml(); return; }
+    if (ds.slot !== undefined) return pickSlot(+ds.slot);
+    if (ds.mapback) { quiz.mapView = "japan"; document.getElementById("visual").innerHTML = tapMapHtml(); return; }
     if (ds.reveal) return reveal();
     if (ds.self !== undefined) return selfJudge(ds.self === "1");
     if (ds.next) return next();
@@ -502,5 +745,16 @@
     }
   });
 
+  // 確認用：アドレスの末尾に #q=問題ID,問題ID を付けると、その問題だけを出題する（学習記録には影響しない使い方もできる）
+  var m = location.hash.match(/q=([\w,-]+)/);
+  if (m) {
+    var ids = m[1].split(",");
+    var qs = QB.list.filter(function (q) { return ids.indexOf(q.id) >= 0; });
+    if (qs.length) {
+      quiz = { mode: "debug", qs: qs, i: 0, results: [], answered: false };
+      question();
+      return;
+    }
+  }
   home();
 })();

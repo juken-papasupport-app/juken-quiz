@@ -20,7 +20,8 @@ var QB = {
       { id: "meiji", label: "明治" },
       { id: "taisho", label: "大正" },
       { id: "showa1", label: "昭和（戦前・戦中）" },
-      { id: "showa2", label: "昭和（戦後）・平成・令和" }
+      { id: "showa2", label: "昭和（戦後）・平成・令和" },
+      { id: "timeline", label: "📜 年表（並べかえ・位置）" }
     ],
     geography: [
       { id: "hokkaido", label: "北海道" },
@@ -34,8 +35,17 @@ var QB = {
       { id: "agri", label: "農業・水産業" },
       { id: "industry", label: "工業" },
       { id: "trade", label: "貿易・交通" },
-      { id: "world", label: "世界の国々" }
+      { id: "world", label: "世界の国々" },
+      { id: "mappref", label: "🗾 地図：都道府県・県庁所在地" },
+      { id: "mapprod", label: "🗾 地図：特産物・名所" },
+      { id: "mapfeat", label: "🗾 地図：川・山・平野など" },
+      { id: "climate", label: "📈 雨温図" }
     ]
+  },
+  // 地図チャレンジ・年表チャレンジで出題する分類
+  challenge: {
+    map: ["mappref", "mapprod", "mapfeat", "climate"],
+    timeline: ["timeline"]
   },
   list: [],
   add: function (subject, cat, rows) {
@@ -52,6 +62,18 @@ var QB = {
         wrong: r[4],
         ex: r[5] || ""
       });
+    });
+  },
+  // 地図・雨温図・年表など、特別な形式の問題を追加する（objs はオブジェクトの配列）
+  addObj: function (subject, cat, objs) {
+    var prefix = QB.subjects[subject].prefix;
+    objs.forEach(function (o, i) {
+      o.id = prefix + "-" + cat + "-" + String(i + 1).padStart(3, "0");
+      o.subject = subject;
+      o.cat = cat;
+      o.wrong = o.wrong || [];
+      o.ex = o.ex || "";
+      QB.list.push(o);
     });
   }
 };
