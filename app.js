@@ -240,7 +240,13 @@
         '<label>学年</label><div class="segs">' + gradeBtn(4) + gradeBtn(5) + gradeBtn(6) + "</div>" +
         '<label>難易度</label><div class="chips">' + levelBtn(1) + levelBtn(2) + levelBtn(3) + "</div>" +
         catBlocks +
-        '<label>出題形式</label><div class="segs">' + fmtBtn("choice", "4択") + fmtBtn("self", "答えを考える") + "</div>" +
+        '<label>出題形式</label><div class="segs fmt">' + fmtBtn("choice", "4択") + fmtBtn("input", "文字入力") + fmtBtn("hand", "手書き") + fmtBtn("self", "答えを考える") + "</div>" +
+        (s.format === "input" ? '<p class="note">漢字で書ける答えは漢字で入力。文章で答える問題などは4択で出ます。</p>' : "") +
+        (s.format === "hand" ? '<p class="note">手書き欄に書いて、正解の字と見比べて自分で○×をつけます。文章で答える問題などは4択で出ます。</p>' +
+          '<label>手書きの自動読み取り</label><div class="segs">' +
+          '<button class="seg ' + (s.ocr !== false ? "on" : "") + '" data-ocr="1">使う</button>' +
+          '<button class="seg ' + (s.ocr === false ? "on" : "") + '" data-ocr="0">使わない</button></div>' +
+          '<p class="note">「使う」にすると、書いた線のデータをGoogleの文字読み取りに送って判定の参考にします（名前などの個人情報は送りません）。ネットにつながっていないときは自動で「使わない」と同じ動きになります。</p>' : "") +
         '<label>問題数</label><div class="segs">' + countBtn(10) + countBtn(20) + countBtn(30) + "</div>" +
         '<p class="pool">条件に合う問題：<b>' + pool + "</b>問</p>" +
         '<button class="big start" data-start="normal" ' + (pool ? "" : "disabled") + ">スタート ▶</button>" +
@@ -365,6 +371,7 @@
   }
 
   function question() {
+    pad = null;
     var q = quiz.qs[quiz.i];
     quiz.answered = false;
     quiz.revealed = false;
@@ -389,7 +396,21 @@
       body = '<div id="order">' + orderHtml() + "</div>";
     } else if (type === "timeline") {
       body = '<div id="tl">' + timelineHtml(null) + "</div>";
-    } else if (state.settings.format === "choice") {
+    } else if (state.settings.format === "hand" && inputable(q)) {
+      var hlen = answerBase(q.a).replace(/・/g, "").length;
+      body = '<div id="hand" class="hand">' +
+        '<p class="maphint">✍️ 答えを書こう（' + hlen + "文字）</p>" +
+        '<canvas id="pad" class="pad"></canvas>' +
+        '<div class="padtools"><button class="seg" data-hundo="1">↩ 1つ戻す</button><button class="seg" data-hclear="1">🗑 全部消す</button></div>' +
+        '<div class="judge"><button class="big ng" data-giveup="1">わからない</button><button class="big start" data-hcheck="1">答え合わせ</button></div>' +
+        "</div>";
+    } else if (state.settings.format === "input" && inputable(q)) {
+      var len = answerBase(q.a).replace(/・/g, "").length;
+      body = '<form id="inputForm" class="inputbox" autocomplete="off">' +
+        '<input id="ans" type="text" inputmode="text" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" enterkeyhint="done" placeholder="ここに答えを入力（' + len + '文字）">' +
+        '<div class="judge"><button type="button" class="big ng" data-giveup="1">わからない</button><button type="submit" class="big start">答える</button></div>' +
+        "</form>";
+    } else if (state.settings.format === "choice" || state.settings.format === "input") {
       body = '<div class="choices">' + quiz.choices.map(function (c, i) {
         return '<button class="choice" data-choice="' + i + '">' + esc(c) + "</button>";
       }).join("") + "</div>";
@@ -408,6 +429,9 @@
         (visual ? '<div id="visual" class="visual">' + visual + "</div>" : "") +
       "</section>" + body + '<div id="feedback"></div>'
     );
+    var ans = document.getElementById("ans");
+    if (ans) ans.focus();
+    if (document.getElementById("pad")) initPad();
   }
 
   function fillOf(code, cls) {
@@ -506,7 +530,7 @@
     feedback(ok);
   }
 
-  function feedback(ok, note) {
+  function feedback(ok, note, canOverride) {
     var q = quiz.qs[quiz.i];
     var t = q.type || "text";
     var right = t === "order" ? "正しい順番は下のとおり" : t === "timeline" ? "正解は「" + esc(q.a) + "」" : "正解は「" + esc(q.a) + "」";
@@ -516,7 +540,8 @@
     var ex = exText ? '<p class="ex">💡 ' + esc(exText) + "</p>" : "";
     var last = quiz.i + 1 >= quiz.qs.length;
     document.getElementById("feedback").innerHTML =
-      msg + ex + '<button class="big start" data-next="1">' + (last ? "結果を見る" : "次の問題 ▶") + "</button>";
+      msg + ex + '<button class="big start" data-next="1">' + (last ? "結果を見る" : "次の問題 ▶") + "</button>" +
+      (canOverride ? '<button class="link override" data-override="1">書き方がちがうだけで合っていた → ⭕にする</button>' : "");
     document.querySelector("[data-next]").scrollIntoView({ behavior: "smooth", block: "nearest" });
   }
 
@@ -554,7 +579,219 @@
     next();
   }
 
+  // ---------- 文字入力 ----------
+  function answerBase(a) {
+    return String(a).replace(/[（(][^)）]*[)）]/g, "").replace(/^約/, "").trim();
+  }
+  // 文字で答えられる問題か（文章の答えや、地図タップ・並べかえ等は除く）
+  function inputable(q) {
+    var t = q.type || "text";
+    if (["text", "mapname", "mapmark", "climate"].indexOf(t) < 0) return false;
+    var b = answerBase(q.a);
+    if (!b || b.length > 12) return false;
+    if (/[、。\s]/.test(b)) return false;
+    if (/から|ため|ので|になる|ている|など|や/.test(b) && b.length > 5) return false;
+    if (/[がをにでは]/.test(b) && b.length > 6 && !/[ァ-ヶー]{3}/.test(b)) return false;
+    return true;
+  }
+  function norm(s) {
+    s = String(s).normalize("NFKC").replace(/\s+/g, "");
+    s = s.replace(/[ケヵ]/g, "ヶ").replace(/[‐－―−-]/g, "ー").replace(/[･·]/g, "・").replace(/[「」『』]/g, "");
+    return s;
+  }
+  function variants(a) {
+    var list = [a, answerBase(a)];
+    var m = String(a).match(/[（(]([^)）]*)[)）]/g);
+    if (m) m.forEach(function (x) {
+      x.replace(/^[（(]|[)）]$/g, "").split(/[、,]/).forEach(function (v) { list.push(v); });
+    });
+    var out = [];
+    list.forEach(function (v) {
+      if (/^約/.test(v)) out.push(norm(v));
+      v = norm(v.replace(/^約/, ""));
+      if (!v) return;
+      out.push(v);
+      if (/^.{2,}[県府]$/.test(v) || v === "東京都") out.push(v.slice(0, -1));
+      if (/^.{2,}市$/.test(v)) out.push(v.slice(0, -1));
+      if (/年$/.test(v)) out.push(v.slice(0, -1));
+    });
+    return out;
+  }
+  function judgeInput(q, input) {
+    var x = norm(input);
+    if (!x) return false;
+    var vs = variants(q.a);
+    if (vs.indexOf(x) >= 0) return true;
+    // 「A・B」の答えは順番がちがってもOK
+    var base = norm(answerBase(q.a));
+    if (base.indexOf("・") >= 0) {
+      var sortParts = function (s) { return s.split(/[・、,と]/).filter(Boolean).sort().join("|"); };
+      if (sortParts(base) === sortParts(x)) return true;
+    }
+    return false;
+  }
+  function submitInput() {
+    if (quiz.answered) return;
+    var el = document.getElementById("ans");
+    var val = el.value;
+    if (!norm(val)) { el.focus(); return; }
+    var q = quiz.qs[quiz.i];
+    var ok = judgeInput(q, val);
+    quiz.answered = true;
+    el.disabled = true;
+    el.classList.add(ok ? "right" : "wrong");
+    el.blur();
+    document.querySelectorAll("#inputForm button").forEach(function (b) { b.disabled = true; });
+    if (ok) {
+      record(q, true);
+      quiz.results.push({ q: q, ok: true });
+      feedback(true);
+      return;
+    }
+    // まちがいは「次へ」か「○にする」を押した時点で記録する
+    quiz.pending = q;
+    var kanaOnly = /^[ぁ-んァ-ヶー・]+$/.test(norm(val)) && /[一-龯々]/.test(q.a);
+    feedback(false, (kanaOnly ? "✏️ 漢字で書こう！\n" : "") + "あなたの答え：" + val, !kanaOnly);
+  }
+  function giveUp() {
+    if (quiz.answered) return;
+    var q = quiz.qs[quiz.i];
+    quiz.answered = true;
+    var a = document.getElementById("ans");
+    if (a) a.disabled = true;
+    document.querySelectorAll("#inputForm button, #hand button").forEach(function (b) { b.disabled = true; });
+    if (pad) pad.locked = true;
+    record(q, false);
+    quiz.results.push({ q: q, ok: false });
+    feedback(false);
+  }
+
+  // ---------- 手書き ----------
+  var pad = null;
+  function initPad() {
+    var cv = document.getElementById("pad");
+    var rect = cv.getBoundingClientRect();
+    var w = rect.width || 340, h = rect.height || 190;
+    var dpr = window.devicePixelRatio || 1;
+    cv.width = Math.round(w * dpr);
+    cv.height = Math.round(h * dpr);
+    var ctx = cv.getContext ? cv.getContext("2d") : null;
+    pad = { cv: cv, ctx: ctx, w: w, h: h, dpr: dpr, strokes: [], cur: null, t0: Date.now(), locked: false };
+    var pos = function (e) {
+      var r = cv.getBoundingClientRect();
+      return [e.clientX - r.left, e.clientY - r.top, Date.now() - pad.t0];
+    };
+    cv.addEventListener("pointerdown", function (e) {
+      if (pad.locked) return;
+      e.preventDefault();
+      if (cv.setPointerCapture) cv.setPointerCapture(e.pointerId);
+      pad.cur = [pos(e)];
+      pad.strokes.push(pad.cur);
+      drawPad();
+    });
+    cv.addEventListener("pointermove", function (e) {
+      if (!pad.cur || pad.locked) return;
+      e.preventDefault();
+      pad.cur.push(pos(e));
+      drawPad();
+    });
+    var end = function () { pad.cur = null; };
+    cv.addEventListener("pointerup", end);
+    cv.addEventListener("pointercancel", end);
+    drawPad();
+  }
+  function drawPad() {
+    if (!pad || !pad.ctx) return;
+    var c = pad.ctx;
+    c.setTransform(pad.dpr, 0, 0, pad.dpr, 0, 0);
+    c.clearRect(0, 0, pad.w, pad.h);
+    // 中心線（書きやすさのためのガイド）
+    c.strokeStyle = "#e2e8f0";
+    c.lineWidth = 1;
+    c.setLineDash([6, 6]);
+    c.beginPath();
+    c.moveTo(0, pad.h / 2);
+    c.lineTo(pad.w, pad.h / 2);
+    c.stroke();
+    c.setLineDash([]);
+    c.strokeStyle = "#1e293b";
+    c.lineWidth = 5;
+    c.lineCap = "round";
+    c.lineJoin = "round";
+    pad.strokes.forEach(function (s) {
+      c.beginPath();
+      c.moveTo(s[0][0], s[0][1]);
+      if (s.length === 1) c.lineTo(s[0][0] + 0.1, s[0][1] + 0.1);
+      for (var i = 1; i < s.length; i++) c.lineTo(s[i][0], s[i][1]);
+      c.stroke();
+    });
+  }
+  // Google の手書き文字認識（非公式）。失敗したら null を返す
+  function recognize(strokes, w, h) {
+    if (state.settings.ocr === false || !window.fetch || navigator.onLine === false) return Promise.resolve(null);
+    var ink = strokes.map(function (s) {
+      return [s.map(function (p) { return Math.round(p[0]); }), s.map(function (p) { return Math.round(p[1]); }), s.map(function (p) { return p[2]; })];
+    });
+    var ctrl = window.AbortController ? new AbortController() : null;
+    var timer = setTimeout(function () { if (ctrl) ctrl.abort(); }, 6000);
+    return fetch("https://inputtools.google.com/request?ime=handwriting&app=mobilesearch&cs=1&oe=UTF-8", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ options: "enable_pre_space", requests: [{ writing_guide: { writing_area_width: Math.round(w), writing_area_height: Math.round(h) }, ink: ink, language: "ja" }] }),
+      signal: ctrl ? ctrl.signal : undefined
+    }).then(function (r) { return r.json(); }).then(function (d) {
+      clearTimeout(timer);
+      if (d[0] !== "SUCCESS") return null;
+      return (d[1][0][1] || []).slice(0, 5);
+    }).catch(function () { clearTimeout(timer); return null; });
+  }
+  function handCheck() {
+    if (quiz.answered || !pad) return;
+    if (!pad.strokes.length) return;
+    var q = quiz.qs[quiz.i];
+    quiz.answered = true;
+    pad.locked = true;
+    document.querySelectorAll("#hand button").forEach(function (b) { b.disabled = true; });
+    var fbEl = document.getElementById("feedback");
+    fbEl.innerHTML = '<p class="hint">' + (state.settings.ocr === false ? "" : "🔍 読み取り中…") + "</p>";
+    recognize(pad.strokes, pad.w, pad.h).then(function (cands) {
+      var auto = "";
+      var autoOk = null;
+      if (cands && cands.length) {
+        autoOk = cands.slice(0, 3).some(function (c) { return judgeInput(q, c); });
+        auto = '<div class="autores ' + (autoOk ? "ok" : "ng") + '">🤖 自動読み取り：「' + esc(cands[0]) + "」→ " + (autoOk ? "⭕ 正解みたい" : "❌ ちがうかも") + "</div>";
+      } else if (state.settings.ocr !== false) {
+        auto = '<div class="autores">🤖 自動読み取りができませんでした（オフラインなど）。見比べて判定しよう</div>';
+      }
+      var ex = q.ex ? '<p class="ex">💡 ' + esc(q.ex) + "</p>" : "";
+      fbEl.innerHTML = auto +
+        '<div class="compare"><div><small>あなたの字</small><img src="' + (pad.cv.toDataURL ? pad.cv.toDataURL("image/png") : "") + '" alt=""></div>' +
+        '<div><small>正解</small><div class="answer kanji">' + esc(q.a) + "</div></div></div>" + ex +
+        '<p class="hint">とめ・はね・点の数まで、正しく書けたかな？</p>' +
+        '<div class="judge"><button class="big ok" data-hjudge="1">⭕ 正しく書けた</button><button class="big ng" data-hjudge="0">❌ ちがった</button></div>';
+      var hand = document.getElementById("hand");
+      if (hand) hand.style.display = "none";
+      var j = fbEl.querySelector(".judge");
+      if (j && j.scrollIntoView) j.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    });
+  }
+  function handJudge(ok) {
+    var q = quiz.qs[quiz.i];
+    if (quiz.results.length && quiz.results[quiz.results.length - 1].q === q) return;
+    record(q, ok);
+    quiz.results.push({ q: q, ok: ok });
+    next();
+  }
+  function settlePending(ok) {
+    var q = quiz.pending;
+    if (!q) return;
+    quiz.pending = null;
+    record(q, ok);
+    quiz.results.push({ q: q, ok: ok });
+  }
+
   function next() {
+    settlePending(false);
     quiz.i++;
     if (quiz.i >= quiz.qs.length) return result();
     question();
@@ -684,6 +921,10 @@
   }
 
   // ---------- 操作 ----------
+  app.addEventListener("submit", function (e) {
+    if (e.target.id === "inputForm") { e.preventDefault(); submitInput(); }
+  });
+
   app.addEventListener("click", function (e) {
     var pr = e.target.closest && e.target.closest("svg.tap [data-pref]");
     if (pr) return tapPref(+pr.getAttribute("data-pref"));
@@ -728,8 +969,16 @@
     if (ds.reveal) return reveal();
     if (ds.self !== undefined) return selfJudge(ds.self === "1");
     if (ds.next) return next();
+    if (ds.giveup) return giveUp();
+    if (ds.hundo) { if (pad && !pad.locked) { pad.strokes.pop(); drawPad(); } return; }
+    if (ds.hclear) { if (pad && !pad.locked) { pad.strokes = []; drawPad(); } return; }
+    if (ds.hcheck) return handCheck();
+    if (ds.hjudge !== undefined) return handJudge(ds.hjudge === "1");
+    if (ds.ocr !== undefined) { s.ocr = ds.ocr === "1"; save(); return home(); }
+    if (ds.override) { settlePending(true); return next(); }
     if (ds.retry) return retryWrong();
     if (ds.quit) {
+      settlePending(false);
       if (!quiz.results.length || confirm("途中でやめますか？（ここまでの記録は保存されています）")) return home();
       return;
     }
@@ -744,6 +993,9 @@
       }
     }
   });
+
+  // テスト用
+  window.__jq = { inputable: inputable, judgeInput: judgeInput, variants: variants };
 
   // 確認用：アドレスの末尾に #q=問題ID,問題ID を付けると、その問題だけを出題する（学習記録には影響しない使い方もできる）
   var m = location.hash.match(/q=([\w,-]+)/);

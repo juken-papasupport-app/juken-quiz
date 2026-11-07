@@ -156,3 +156,23 @@ button:disabled { opacity: 0.4; cursor: default; }
 .slot.right { background: #dcfce7; border: 2px solid #16a34a; color: #166534; }
 .slot.wrong { background: #fee2e2; border: 2px solid #dc2626; color: #991b1b; }
 .ex { white-space: pre-line; }
+
+/* ---- 文字入力 ---- */
+.inputbox input { width: 100%; font-size: 22px; font-weight: 700; padding: 14px; border: 2px solid #c7d2fe; border-radius: 14px; background: #fff; text-align: center; -webkit-appearance: none; }
+.inputbox input:focus { outline: none; border-color: #4f46e5; }
+.inputbox input.right { border-color: #16a34a; background: #dcfce7; color: #166534; }
+.inputbox input.wrong { border-color: #dc2626; background: #fee2e2; color: #991b1b; text-decoration: line-through; }
+.inputbox .judge { margin-top: 4px; }
+.override { display: block; width: 100%; text-align: center; color: #64748b; font-weight: 600; }
+
+/* ---- 手書き ---- */
+.segs.fmt .seg { font-size: 14px; padding: 0 2px; }
+.pad { display: block; width: 100%; height: 190px; background: #fff; border: 2px solid #c7d2fe; border-radius: 14px; touch-action: none; -webkit-user-select: none; user-select: none; }
+.padtools { display: flex; gap: 6px; margin: 6px 0 2px; }
+.autores { margin-top: 12px; border-radius: 12px; padding: 10px 12px; background: #f1f5f9; font-size: 15px; font-weight: 700; }
+.autores.ok { background: #dcfce7; color: #166534; }
+.autores.ng { background: #fee2e2; color: #991b1b; }
+.compare { display: grid; grid-template-columns: 1fr; gap: 8px; margin-top: 10px; }
+.compare small { display: block; color: #64748b; font-weight: 700; margin-bottom: 4px; }
+.compare img { display: block; width: 100%; background: #fff; border: 2px solid #e2e8f0; border-radius: 12px; }
+.answer.kanji { font-size: 28px; padding: 12px 6px; word-break: keep-all; overflow-wrap: anywhere; font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; }
