@@ -99,9 +99,11 @@
     return c ? c.label : cat;
   }
   var app = document.getElementById("app");
-  function render(html) {
+  // keep=true のときはスクロール位置を保つ（出題設定の変更時）
+  function render(html, keep) {
+    var y = window.pageYOffset || document.documentElement.scrollTop || 0;
     app.innerHTML = html;
-    window.scrollTo(0, 0);
+    window.scrollTo(0, keep ? y : 0);
   }
 
   // ---------- 問題の抽出 ----------
@@ -181,7 +183,7 @@
   }
 
   // ---------- ホーム ----------
-  function home() {
+  function home(keep) {
     var s = state.settings;
     var due = dueList().length;
     var weak = weakList().length;
@@ -250,7 +252,8 @@
         '<label>問題数</label><div class="segs">' + countBtn(10) + countBtn(20) + countBtn(30) + "</div>" +
         '<p class="pool">条件に合う問題：<b>' + pool + "</b>問</p>" +
         '<button class="big start" data-start="normal" ' + (pool ? "" : "disabled") + ">スタート ▶</button>" +
-      "</section>"
+      "</section>",
+      keep
     );
   }
 
@@ -933,29 +936,29 @@
     var s = state.settings;
     var ds = b.dataset;
 
-    if (ds.subject) { s.subject = ds.subject; save(); return home(); }
-    if (ds.grade) { s.maxGrade = +ds.grade; save(); return home(); }
+    if (ds.subject) { s.subject = ds.subject; save(); return home(true); }
+    if (ds.grade) { s.maxGrade = +ds.grade; save(); return home(true); }
     if (ds.level) {
       var l = +ds.level;
       var i = s.levels.indexOf(l);
       if (i >= 0) { if (s.levels.length > 1) s.levels.splice(i, 1); } else s.levels.push(l);
-      save(); return home();
+      save(); return home(true);
     }
     if (ds.cat) {
       var parts = ds.cat.split(":");
       var arr = s.cats[parts[0]];
       var j = arr.indexOf(parts[1]);
       if (j >= 0) arr.splice(j, 1); else arr.push(parts[1]);
-      save(); return home();
+      save(); return home(true);
     }
     if (ds.allcats) {
       var subj = ds.allcats;
       var all = QB.categories[subj].map(function (c) { return c.id; });
       s.cats[subj] = s.cats[subj].length === all.length ? [] : all;
-      save(); return home();
+      save(); return home(true);
     }
-    if (ds.format) { s.format = ds.format; save(); return home(); }
-    if (ds.count) { s.count = +ds.count; save(); return home(); }
+    if (ds.format) { s.format = ds.format; save(); return home(true); }
+    if (ds.count) { s.count = +ds.count; save(); return home(true); }
     if (ds.start) return startQuiz(ds.start);
     if (ds.catstart) {
       var p = ds.catstart.split(":");
@@ -974,7 +977,7 @@
     if (ds.hclear) { if (pad && !pad.locked) { pad.strokes = []; drawPad(); } return; }
     if (ds.hcheck) return handCheck();
     if (ds.hjudge !== undefined) return handJudge(ds.hjudge === "1");
-    if (ds.ocr !== undefined) { s.ocr = ds.ocr === "1"; save(); return home(); }
+    if (ds.ocr !== undefined) { s.ocr = ds.ocr === "1"; save(); return home(true); }
     if (ds.override) { settlePending(true); return next(); }
     if (ds.retry) return retryWrong();
     if (ds.quit) {
