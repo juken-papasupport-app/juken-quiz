@@ -1,5 +1,5 @@
 // オンライン時は最新版を取得し、オフライン時は保存しておいた版で動く
-var CACHE = "jq-cache-v5";
+var CACHE = "jq-cache-v6";
 var FILES = [
   "./",
   "index.html",

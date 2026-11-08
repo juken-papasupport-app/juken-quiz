@@ -8,9 +8,55 @@
   var LEVEL_LABEL = { 1: "基本", 2: "標準", 3: "応用" };
   var PRAISE = ["すごい！", "その調子！", "よくできました！", "正解！", "ナイス！", "完ぺき！"];
 
+  // ---------- 塾テキストの問題（iPhoneの中だけに保存。GitHubには置かない） ----------
+  var JUKU_KEY = "jq-juku";
+  QB.subjects.juku = { label: "塾", prefix: "j" };
+  QB.categories.juku = [];
+  function loadJuku() {
+    try {
+      var d = JSON.parse(localStorage.getItem(JUKU_KEY) || "null");
+      return d && d.units ? d : { book: "", units: [] };
+    } catch (e) {
+      return { book: "", units: [] };
+    }
+  }
+  var juku = loadJuku();
+  function registerJuku() {
+    QB.list = QB.list.filter(function (q) { return q.subject !== "juku"; });
+    QB.categories.juku = [];
+    juku.units.forEach(function (u) {
+      QB.categories.juku.push({ id: u.id, label: u.label });
+      (u.questions || []).forEach(function (src, i) {
+        var o = JSON.parse(JSON.stringify(src));
+        o.id = "j-" + u.id + "-" + String(i + 1).padStart(3, "0");
+        o.subject = "juku";
+        o.cat = u.id;
+        o.grade = o.grade || 5;
+        o.level = o.level || 2;
+        o.wrong = o.wrong || [];
+        if (o.type === "order" && o.events && Array.isArray(o.events[0])) {
+          // 並べかえ問題：[[年, 出来事], ...] をその場で登録
+          o.events = o.events.map(function (e, k) {
+            var key = o.id + "-e" + k;
+            QB.events[key] = [e[0], e[1]];
+            return key;
+          });
+          var sorted = o.events.slice().sort(function (a, b) { return QB.events[a][0] - QB.events[b][0]; });
+          o.q = o.q || "次の出来事を、古い順にタップしよう";
+          o.a = sorted.map(function (k) { return QB.events[k][1]; }).join(" → ");
+          o.ex = (o.ex ? o.ex + "\n" : "") + sorted.map(function (k) { return QB.events[k][0] + "年 " + QB.events[k][1]; }).join("\n");
+        }
+        var where = [juku.book, u.label, o.src].filter(Boolean).join(" ");
+        if (o.src) o.ex = (o.ex ? o.ex + "\n" : "") + "📘 " + where;
+        QB.list.push(o);
+      });
+    });
+  }
+  registerJuku();
+
   // ---------- 保存データ ----------
   function allCatIds() {
-    return QB.categories.history.concat(QB.categories.geography).map(function (c) { return c.id; });
+    return QB.categories.history.concat(QB.categories.geography, QB.categories.juku).map(function (c) { return c.id; });
   }
   function defaultState() {
     return {
@@ -20,7 +66,8 @@
         levels: [1, 2, 3],
         cats: {
           history: QB.categories.history.map(function (c) { return c.id; }),
-          geography: QB.categories.geography.map(function (c) { return c.id; })
+          geography: QB.categories.geography.map(function (c) { return c.id; }),
+          juku: QB.categories.juku.map(function (c) { return c.id; })
         },
         format: "choice",
         count: 10,
@@ -49,7 +96,8 @@
       if (!s.settings.seenCats) {
         s.settings.seenCats = allCatIds().filter(function (id) { return NEW_V2.indexOf(id) < 0; });
       }
-      ["history", "geography"].forEach(function (subj) {
+      s.settings.cats.juku = s.settings.cats.juku || [];
+      ["history", "geography", "juku"].forEach(function (subj) {
         QB.categories[subj].forEach(function (c) {
           if (s.settings.seenCats.indexOf(c.id) < 0) {
             s.settings.seenCats.push(c.id);
@@ -113,6 +161,7 @@
     return QB.list.filter(function (q) {
       if (opts.cat) return q.subject === opts.subject && q.cat === opts.cat;
       if (s.subject !== "both" && q.subject !== s.subject) return false;
+      if (s.subject === "both" && q.subject === "juku") return false;
       if (q.grade > s.maxGrade) return false;
       if (s.levels.indexOf(q.level) < 0) return false;
       if (s.cats[q.subject].indexOf(q.cat) < 0) return false;
@@ -207,13 +256,14 @@
       return '<button class="seg ' + (s.count === n ? "on" : "") + '" data-count="' + n + '">' + n + "問</button>";
     };
 
+    if (s.subject === "juku" && !QB.categories.juku.length) s.subject = "history";
     var catBlocks = "";
-    ["history", "geography"].forEach(function (subj) {
-      if (s.subject !== "both" && s.subject !== subj) return;
+    ["history", "geography", "juku"].forEach(function (subj) {
+      if (s.subject !== subj && !(s.subject === "both" && subj !== "juku")) return;
       var all = QB.categories[subj];
       var allOn = s.cats[subj].length === all.length;
       catBlocks +=
-        '<div class="cat-head"><span>' + (subj === "history" ? "時代" : "地域・分野") + "</span>" +
+        '<div class="cat-head"><span>' + (subj === "history" ? "時代" : subj === "juku" ? "回（" + esc(juku.book || "塾テキスト") + "）" : "地域・分野") + "</span>" +
         '<button class="link" data-allcats="' + subj + '">' + (allOn ? "すべて外す" : "すべて選ぶ") + "</button></div>" +
         '<div class="chips">' +
         all.map(function (c) {
@@ -238,7 +288,8 @@
       "</section>" +
       '<section class="card">' +
         '<h2>出題設定</h2>' +
-        '<label>教科</label><div class="segs">' + subjBtn("history", "歴史") + subjBtn("geography", "地理") + subjBtn("both", "両方") + "</div>" +
+        '<label>教科</label><div class="segs">' + subjBtn("history", "歴史") + subjBtn("geography", "地理") + subjBtn("both", "両方") +
+          (QB.categories.juku.length ? subjBtn("juku", "📘 塾") : "") + "</div>" +
         '<label>学年</label><div class="segs">' + gradeBtn(4) + gradeBtn(5) + gradeBtn(6) + "</div>" +
         '<label>難易度</label><div class="chips">' + levelBtn(1) + levelBtn(2) + levelBtn(3) + "</div>" +
         catBlocks +
@@ -887,6 +938,17 @@
       '<div class="legend"><span><i class="n"></i>解いた数</span><span><i class="c"></i>正解数</span></div></section>' +
       '<section class="card"><h2>歴史（時代別）</h2><p class="note">タップするとその分野を出題します</p>' + catRows("history") + "</section>" +
       '<section class="card"><h2>地理（地域・分野別）</h2>' + catRows("geography") + "</section>" +
+      (QB.categories.juku.length ? '<section class="card"><h2>📘 塾テキスト（回別）</h2>' + catRows("juku") + "</section>" : "") +
+      '<section class="card"><h2>📘 塾テキストの問題</h2>' +
+        '<p class="note">塾テキストから作った問題ファイル（.json）を読み込みます。読み込んだ問題はこのiPhoneの中だけに保存され、インターネットには公開されません。</p>' +
+        (juku.units.length
+          ? juku.units.map(function (u) {
+              return '<div class="juku-unit"><span>' + esc(u.label) + "（" + (u.questions || []).length + '問）</span><button class="link danger" data-jukudel="' + esc(u.id) + '">削除</button></div>';
+            }).join("")
+          : '<p class="note">まだ読み込んでいません。</p>') +
+        '<button class="big start" data-jukuimport="1">📥 問題ファイルを読み込む</button>' +
+        '<input type="file" id="jukuFile" hidden>' +
+      "</section>" +
       '<div class="legend center"><span><i class="t"></i>解いた</span><span><i class="m"></i>覚えた（4回以上連続正解）</span></div>' +
       '<section class="card"><h2>データの保存</h2>' +
         '<p class="note">機種変更などに備えて、記録をコピーしてメモ等に保存できます。</p>' +
@@ -924,6 +986,59 @@
   }
 
   // ---------- 操作 ----------
+  // ---------- 塾テキストの問題ファイルの読み込み ----------
+  function saveJuku() {
+    try {
+      localStorage.setItem(JUKU_KEY, JSON.stringify(juku));
+      return true;
+    } catch (e) {
+      alert("保存できませんでした（容量がいっぱいの可能性があります）。");
+      return false;
+    }
+  }
+  function validUnit(u) {
+    return u && typeof u.id === "string" && /^[\w-]+$/.test(u.id) && u.label && Array.isArray(u.questions) &&
+      u.questions.every(function (q) {
+        if (q.type === "order") return Array.isArray(q.events) && q.events.length >= 3;
+        if (q.type === "maptap") return q.pref >= 1 && q.pref <= 47 && q.q && q.a;
+        return q.q && q.a && (!q.wrong || q.wrong.length === 3);
+      });
+  }
+  function importJuku(text) {
+    var d;
+    try { d = JSON.parse(text.replace(/^﻿/, "")); } catch (e) { return alert("問題ファイルとして読み込めませんでした。"); }
+    if (!d || d.app !== "jq-juku" || !Array.isArray(d.units)) return alert("このアプリ用の問題ファイルではありません。");
+    var bad = d.units.filter(function (u) { return !validUnit(u); });
+    if (bad.length) return alert("ファイルの中に読み込めない回があります：" + bad.map(function (u) { return u && u.label; }).join("、"));
+    var names = [];
+    var total = 0;
+    d.units.forEach(function (u) {
+      var i = juku.units.findIndex(function (x) { return x.id === u.id; });
+      if (i >= 0) juku.units[i] = u; else juku.units.push(u);
+      names.push(u.label);
+      total += u.questions.length;
+    });
+    juku.units.sort(function (a, b) { return a.id < b.id ? -1 : 1; });
+    if (d.book) juku.book = d.book;
+    if (!saveJuku()) return;
+    registerJuku();
+    var s = state.settings;
+    s.cats.juku = s.cats.juku || [];
+    d.units.forEach(function (u) {
+      if (s.seenCats.indexOf(u.id) < 0) s.seenCats.push(u.id);
+      if (s.cats.juku.indexOf(u.id) < 0) s.cats.juku.push(u.id);
+    });
+    save();
+    alert(names.length + "回分（" + total + "問）を読み込みました：\n" + names.join("\n"));
+    records();
+  }
+  app.addEventListener("change", function (e) {
+    if (e.target.id !== "jukuFile" || !e.target.files || !e.target.files[0]) return;
+    var r = new FileReader();
+    r.onload = function () { importJuku(String(r.result)); };
+    r.readAsText(e.target.files[0], "utf-8");
+  });
+
   app.addEventListener("submit", function (e) {
     if (e.target.id === "inputForm") { e.preventDefault(); submitInput(); }
   });
@@ -988,6 +1103,17 @@
     if (ds.go === "home") return home();
     if (ds.go === "records") return records();
     if (ds.backup) return backup();
+    if (ds.jukuimport) { document.getElementById("jukuFile").click(); return; }
+    if (ds.jukudel) {
+      var del = juku.units.find(function (u) { return u.id === ds.jukudel; });
+      if (del && confirm("「" + del.label + "」の問題を削除しますか？（学習記録は残ります）")) {
+        juku.units = juku.units.filter(function (u) { return u.id !== ds.jukudel; });
+        saveJuku();
+        registerJuku();
+        records();
+      }
+      return;
+    }
     if (ds.restore) return restore();
     if (ds.reset) {
       if (confirm("学習記録をすべて消します。元に戻せません。よろしいですか？")) {
@@ -998,7 +1124,7 @@
   });
 
   // テスト用
-  window.__jq = { inputable: inputable, judgeInput: judgeInput, variants: variants };
+  window.__jq = { inputable: inputable, judgeInput: judgeInput, variants: variants, importJuku: function (t) { return importJuku(t); } };
 
   // 確認用：アドレスの末尾に #q=問題ID,問題ID を付けると、その問題だけを出題する（学習記録には影響しない使い方もできる）
   var m = location.hash.match(/q=([\w,-]+)/);

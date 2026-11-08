@@ -176,3 +176,7 @@ button:disabled { opacity: 0.4; cursor: default; }
 .compare small { display: block; color: #64748b; font-weight: 700; margin-bottom: 4px; }
 .compare img { display: block; width: 100%; background: #fff; border: 2px solid #e2e8f0; border-radius: 12px; }
 .answer.kanji { font-size: 28px; padding: 12px 6px; word-break: keep-all; overflow-wrap: anywhere; font-family: "Hiragino Mincho ProN", "Yu Mincho", serif; }
+
+/* ---- 塾テキスト ---- */
+.juku-unit { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #f1f5f9; padding: 6px 0; font-size: 15px; }
+.juku-unit .link.danger { margin: 0; }
